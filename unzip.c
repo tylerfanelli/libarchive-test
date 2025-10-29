@@ -1,8 +1,10 @@
+#include <stdlib.h>
+
 #include <archive.h>
 #include <archive_entry.h>
 
 struct archive *
-reader_init(char *filename)
+reader_init(void *buf, size_t size)
 {
     struct archive *r;
     int ret;
@@ -19,7 +21,7 @@ reader_init(char *filename)
         return NULL;
     }
 
-    ret = archive_read_open_filename(r, filename, 10240);
+    ret = archive_read_open_memory(r, buf, size);
     if (ret != ARCHIVE_OK) {
         printf("reader cannot open file\ncause: %s\n", archive_error_string(r));
         return NULL;
@@ -104,17 +106,61 @@ archive_cleanup(struct archive *r, struct archive *w)
 }
 
 int
+file_read(char *name, void **buf_ptr, size_t *size)
+{
+    FILE *fp;
+    size_t sz, amount_read, idx = 0;
+    uint8_t *buf;
+
+    fp = fopen(name, "r");
+    if (fp == NULL)
+        return -1;
+
+    fseek(fp, 0L, SEEK_END);
+    sz = ftell(fp);
+
+    rewind(fp);
+
+    buf = (uint8_t *) malloc(sz);
+    if (buf == NULL)
+        return -1;
+
+    *size = sz;
+
+    while (sz) {
+        amount_read = fread(&buf[idx], sizeof(uint8_t), sz, fp);
+        if (amount_read <= 0) {
+            fclose(fp);
+            free((void *) buf);
+            return -1;
+        }
+        sz -= amount_read;
+        idx += amount_read;
+    }
+
+    *buf_ptr = (void *) buf;
+
+    return 0;
+}
+
+int
 main(int argc, char *argv[])
 {
     struct archive *reader, *writer;
     int ret;
+    void *buf;
+    size_t size;
 
     if (argc != 2) {
         printf("usage: %s ARCHIVE_FILE_NAME\n", argv[0]);
         return -1;
     }
 
-    reader = reader_init(argv[1]);
+    ret = file_read(argv[1], &buf, &size);
+    if (ret < 0)
+        return -1;
+
+    reader = reader_init(buf, size);
     if (reader == NULL)
         return -1;
 
